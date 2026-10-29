@@ -6,57 +6,50 @@ import { RegisterSchema } from '@/lib/validators';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const parsed = RegisterSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
     }
 
     const { email, password } = parsed.data;
-
-    // Check if user already exists
-    const { data: existing } = await supabase
+    const { data: existing, error: lookupError } = await supabase
       .from('users')
-      .select('id, email, master_token, password_hash')
+      .select('id')
       .eq('email', email)
-      .single();
+      .maybeSingle();
 
-    if (existing) {
-      if (!existing.password_hash) {
-        const password_hash = await hash(password, 10);
-        const { data: updatedUser, error: updateError } = await supabase
-          .from('users')
-          .update({ password_hash })
-          .eq('id', existing.id)
-          .select()
-          .single();
-
-        if (updateError || !updatedUser) {
-          console.error('Failed to update password for existing user:', updateError);
-          return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
-        }
-
-        return NextResponse.json({
-          exists: true,
-          master_token: updatedUser.master_token,
-          message: 'Password created successfully',
-        });
-      }
-
-      return NextResponse.json({ error: 'Account already exists. Please sign in instead.' }, { status: 400 });
+    if (lookupError) {
+      console.error('Failed to look up user:', lookupError);
+      return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
     }
 
-    // Hash password
+    // Legacy accounts also require verified recovery before setting a password.
+    // Knowing an email address alone must never grant access to its alerts.
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Account already exists. Please sign in instead.' },
+        { status: 409 }
+      );
+    }
+
     const password_hash = await hash(password, 10);
     const master_token = generateToken();
-    
     const { data: newUser, error } = await supabase
       .from('users')
       .insert({ email, password_hash, master_token })
-      .select()
+      .select('master_token')
       .single();
 
-    if (error) {
+    // The unique email constraint also covers simultaneous registration requests.
+    if (error?.code === '23505') {
+      return NextResponse.json(
+        { error: 'Account already exists. Please sign in instead.' },
+        { status: 409 }
+      );
+    }
+
+    if (error || !newUser) {
       console.error('Failed to create user:', error);
       return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
     }
@@ -65,7 +58,7 @@ export async function POST(req: NextRequest) {
       exists: false,
       master_token: newUser.master_token,
       message: 'Account created successfully',
-    });
+    }, { status: 201 });
   } catch (e) {
     console.error('/api/users error:', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
