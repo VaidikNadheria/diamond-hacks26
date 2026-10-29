@@ -2,6 +2,8 @@
 
 An automated OfferUp deal scout built at **DiamondHacks 2026**, organized by ACM at UC San Diego.
 
+[View the original Belfort Tips submission on Devpost](https://devpost.com/software/belfort-tips).
+
 Create an account, describe an item and location, and choose an alert schedule. A browser agent collects local listings, a language model scores their value and relevance, and the app emails a ranked digest.
 
 This repository preserves a team hackathon project and its Git history. See [contribution evidence](docs/CONTRIBUTIONS.md) for Vaidik Nadheria's work on authentication and account flows.
